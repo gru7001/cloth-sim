@@ -1,0 +1,49 @@
+[gd_scene format=3 uid="uid://cxkm13o5kdekp"]
+
+[ext_resource type="Script" uid="uid://b7eehc3ey435i" path="res://src/View/TopologyPresenter.cs" id="1"]
+[ext_resource type="Script" uid="uid://vhqw87qfpqrd" path="res://src/View/OrbitCamera.cs" id="2"]
+[ext_resource type="PackedScene" uid="uid://dr20wx8ysvu7s" path="res://assets/fembody.glb" id="3_fembody"]
+
+[sub_resource type="StandardMaterial3D" id="mat_surface"]
+cull_mode = 2
+albedo_color = Color(0.75, 0.78, 0.82, 1)
+roughness = 0.85
+
+[sub_resource type="StandardMaterial3D" id="mat_graph"]
+cull_mode = 2
+shading_mode = 0
+vertex_color_use_as_albedo = true
+
+[node name="FabricTest" type="Node3D" unique_id=1971351461]
+script = ExtResource("1")
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=781872719]
+transform = Transform3D(1, 0, 0, 0, 0.866025, 0.5, 0, -0.5, 0.866025, 0, 3.5, 5)
+current = true
+script = ExtResource("2")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1831726815]
+transform = Transform3D(0.995884, 0.06408689, -0.06408689, 0, 0.70710653, 0.70710653, 0.09063254, -0.7041964, 0.7041964, 2, 4, 2)
+shadow_enabled = true
+
+[node name="Body" type="Node3D" parent="." unique_id=1151483891]
+
+[node name="FemBody" parent="Body" unique_id=1670135508 instance=ExtResource("3_fembody")]
+
+[node name="StaticBody3D" type="StaticBody3D" parent="Body" unique_id=979088752]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Body/StaticBody3D" unique_id=1949020485]
+
+[node name="Surface" type="MeshInstance3D" parent="." unique_id=1631131247]
+material_override = SubResource("mat_surface")
+
+[node name="Graph" type="MeshInstance3D" parent="." unique_id=-1913566106]
+material_override = SubResource("mat_graph")
+
+[node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=194411464]
+
+[node name="Hint" type="Label" parent="CanvasLayer" unique_id=1489931662]
+offset_left = 12.0
+offset_top = 12.0
+theme_override_font_sizes/font_size = 14
+text = "Right-drag: orbit. Wheel: zoom. Gravity + edge relax."

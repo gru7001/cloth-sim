@@ -1,0 +1,60 @@
+[gd_scene format=3 uid="uid://dve4n1hghv8cm"]
+
+[ext_resource type="Script" uid="uid://bjxix02ft6waw" path="res://src/View/TopologySubdivisionPreview.cs" id="1"]
+[ext_resource type="Script" uid="uid://vhqw87qfpqrd" path="res://src/View/OrbitCamera.cs" id="2"]
+[ext_resource type="PackedScene" uid="uid://dr20wx8ysvu7s" path="res://assets/fembody.glb" id="3_fembody"]
+
+[sub_resource type="StandardMaterial3D" id="mat_surface"]
+transparency = 1
+cull_mode = 2
+albedo_color = Color(0.75, 0.78, 0.82, 0.42)
+roughness = 0.85
+
+[sub_resource type="StandardMaterial3D" id="mat_graph"]
+cull_mode = 2
+shading_mode = 0
+vertex_color_use_as_albedo = true
+
+[node name="TopologySubdivisionPreview" type="Node3D" unique_id=228676923]
+script = ExtResource("1")
+SubdivisionMinUvEdgeLength = 0.1
+SubdivisionSteps = 3
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=764709955]
+transform = Transform3D(1, 0, 0, 0, 0.906308, 0.422618, 0, -0.422618, 0.906308, 0, 3.2, 7)
+current = true
+script = ExtResource("2")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1208069595]
+transform = Transform3D(0.995884, 0.0640869, -0.0640869, 0, 0.707107, 0.707107, 0.0906326, -0.704196, 0.704196, 2, 4, 2)
+shadow_enabled = true
+
+[node name="Body" type="Node3D" parent="." unique_id=894114438]
+
+[node name="FemBody" parent="Body" unique_id=2088177468 instance=ExtResource("3_fembody")]
+
+[node name="Before" type="Node3D" parent="." unique_id=339648315]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.4, 0, 0)
+
+[node name="Surface" type="MeshInstance3D" parent="Before" unique_id=831875148]
+material_override = SubResource("mat_surface")
+
+[node name="Graph" type="MeshInstance3D" parent="Before" unique_id=1314773063]
+material_override = SubResource("mat_graph")
+
+[node name="After" type="Node3D" parent="." unique_id=2125171454]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.4, 0, 0)
+
+[node name="Surface" type="MeshInstance3D" parent="After" unique_id=973295685]
+material_override = SubResource("mat_surface")
+
+[node name="Graph" type="MeshInstance3D" parent="After" unique_id=1005735729]
+material_override = SubResource("mat_graph")
+
+[node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=1565862850]
+
+[node name="Hint" type="Label" parent="CanvasLayer" unique_id=1709728713]
+offset_left = 12.0
+offset_top = 12.0
+theme_override_font_sizes/font_size = 14
+text = "Left: before subdivision. Right: after subdivision. Red: vertices. Cyan: edge midpoints. White: topology edges."
