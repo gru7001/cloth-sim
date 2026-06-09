@@ -41,11 +41,11 @@ public partial class TopologySubdivisionPreview : Node3D
 		var sourceMesh = FindFirstMesh(body)
 			?? throw new InvalidOperationException($"No MeshInstance3D with a Mesh found under {BodyPath}.");
 
-		var patternMarkers = PatternMarkerParser.Parse(LoadImageGrid(PatternPath));
+		var patternMarkers = PatternMarkerParser.Parse(ImageGridLoader.FromResource(PatternPath));
 		var initMarkers = MeshInitMarkerParser.Parse(
 			sourceMesh.Mesh,
 			sourceMesh.GlobalTransform,
-			LoadImageGrid(InitPath),
+			ImageGridLoader.FromResource(InitPath),
 			InitNormalOffset);
 
 		return TopologyBuilder.Build(PatternMarkerPlacement.Place(patternMarkers, initMarkers));
@@ -74,18 +74,6 @@ public partial class TopologySubdivisionPreview : Node3D
 			Mathf.Cos(angle) * radius,
 			layer * radius * 0.35f,
 			Mathf.Sin(angle) * radius);
-	}
-
-	static ImageGrid LoadImageGrid(string path)
-	{
-		var image = Image.LoadFromFile(path);
-		if (image == null)
-			throw new InvalidOperationException($"Could not load image: {path}");
-
-		if (image.GetFormat() != Image.Format.Rgba8)
-			image.Convert(Image.Format.Rgba8);
-
-		return new ImageGrid(image.GetData(), image.GetWidth(), image.GetHeight());
 	}
 
 	static MeshInstance3D? FindFirstMesh(Node node)

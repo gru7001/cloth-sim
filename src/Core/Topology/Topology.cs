@@ -13,6 +13,7 @@ public sealed class Vertex
 {
 	public Vector3 Xyz;
 	public Vector3? ContactNormal;
+	public bool FromSubdivision;
 	public List<Corner> Corners { get; } = [];
 }
 

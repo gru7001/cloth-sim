@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using Godot;
 
 namespace DelaunyFabric.Core;
@@ -23,33 +22,6 @@ public static class TopologyCollision
 			staticFrictionStrength);
 	}
 
-	public static void Apply(
-		Topology topology,
-		ISdfCollider collider,
-		IReadOnlyList<Vector3> wishPositions,
-		float skinDistance,
-		float frictionStrength = 0f,
-		float staticFrictionStrength = 0f)
-	{
-		if (topology.Vertices.Count != wishPositions.Count)
-			throw new System.ArgumentException("Wish count must match topology vertex count.");
-
-		for (int i = 0; i < topology.Vertices.Count; i++)
-		{
-			var vertex = topology.Vertices[i];
-			var wishPosition = wishPositions[i];
-
-			(vertex.Xyz, vertex.ContactNormal) = Move(
-				vertex.Xyz,
-				wishPosition - vertex.Xyz,
-				vertex.ContactNormal,
-				collider,
-				skinDistance,
-				frictionStrength,
-				staticFrictionStrength);
-		}
-	}
-
 	static (Vector3 Xyz, Vector3? ContactNormal) Move(
 		Vector3 position,
 		Vector3 movement,
@@ -63,53 +35,52 @@ public static class TopologyCollision
 		const float epsilon = 1e-5f;
 
 		var current = position;
-		float distanceLeft = movement.Length();
-		var contactNormal = previousContactNormal;
-		if (distanceLeft <= epsilon)
-			return Finish(current, contactNormal, collider, skinDistance);
-
-		var direction = movement / distanceLeft;
+		Vector3? contactNormal = previousContactNormal;
+		float time = 0f;
 
 		for (int step = 0; step < maxSteps; step++)
 		{
-			if (distanceLeft <= epsilon)
-				break;
-
-			var sample = Sample(collider, current);
-			if (sample.SignedDistance < skinDistance)
-			{
-				contactNormal = sample.Normal;
-				current = ProjectToSkin(current, sample, skinDistance);
-				sample = new CollisionSample(skinDistance, contactNormal.Value);
-			}
-
-			direction = SlideAgainstContact(
-				direction,
+			var slideMovement = SlideAgainstContact(
+				movement,
 				contactNormal,
-				distanceLeft,
 				frictionStrength,
 				staticFrictionStrength);
-			float directionLength = direction.Length();
-			if (directionLength <= epsilon)
+			float slideLength = slideMovement.Length();
+			if (slideLength <= epsilon)
+			{
+				(current, contactNormal) = UpdateContact(current, collider, skinDistance);
 				break;
+			}
 
-			direction /= directionLength;
+			var sample = Sample(collider, current);
+			float stepTime = Mathf.Clamp(sample.SignedDistance / slideLength, 0f, 1f - time);
 
-			float stepLength = Mathf.Min(distanceLeft, sample.SignedDistance);
-			if (stepLength <= epsilon)
+			current += slideMovement * stepTime;
+			time += stepTime;
+
+			(current, contactNormal) = UpdateContact(current, collider, skinDistance);
+			if (time >= 1f - epsilon)
 				break;
-
-			current += direction * stepLength;
-			distanceLeft -= stepLength;
 		}
 
-		return Finish(current, contactNormal, collider, skinDistance);
+		return (current, contactNormal);
+	}
+
+	static (Vector3 Xyz, Vector3? ContactNormal) UpdateContact(
+		Vector3 position,
+		ISdfCollider collider,
+		float skinDistance)
+	{
+		var sample = Sample(collider, position);
+		if (sample.SignedDistance > skinDistance)
+			return (position, null);
+
+		return (ProjectToSkin(position, sample, skinDistance), sample.Normal);
 	}
 
 	static Vector3 SlideAgainstContact(
 		Vector3 movement,
 		Vector3? contactNormal,
-		float movementLength,
 		float frictionStrength,
 		float staticFrictionStrength)
 	{
@@ -121,26 +92,13 @@ public static class TopologyCollision
 			return movement;
 
 		var tangent = movement - normal * intoContact;
-		float inward = -intoContact * movementLength;
-		float tangentLength = tangent.Length() * movementLength;
-		if (tangentLength <= inward * staticFrictionStrength)
+		float inwardLength = -intoContact;
+		float tangentLength = tangent.Length();
+		if (tangentLength <= inwardLength * staticFrictionStrength)
 			return Vector3.Zero;
 
-		float friction = 1f / (1f + inward * frictionStrength);
+		float friction = 1f / (1f + inwardLength * frictionStrength);
 		return tangent * friction;
-	}
-
-	static (Vector3 Xyz, Vector3? ContactNormal) Finish(
-		Vector3 position,
-		Vector3? contactNormal,
-		ISdfCollider collider,
-		float skinDistance)
-	{
-		var sample = Sample(collider, position);
-		if (sample.SignedDistance <= skinDistance)
-			return (ProjectToSkin(position, sample, skinDistance), sample.Normal);
-
-		return (position, null);
 	}
 
 	static Vector3 ProjectToSkin(Vector3 position, CollisionSample sample, float skinDistance) =>

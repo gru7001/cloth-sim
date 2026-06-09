@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using DelaunyFabric.Core;
 using CoreCorner = DelaunyFabric.Core.Corner;
 using Vector2 = Godot.Vector2;
@@ -13,6 +14,79 @@ Dump("before", topology);
 Dump("after 1 split", TopologySubdivision.Subdivide(topology, minEdgeLength: 0.1f, maxSplits: 1));
 Dump("after 2 splits", TopologySubdivision.Subdivide(topology, minEdgeLength: 0.1f, maxSplits: 2));
 Dump("after 3 splits", TopologySubdivision.Subdivide(topology, minEdgeLength: 0.1f, maxSplits: 3));
+
+var once = TopologySubdivision.Subdivide(topology, minEdgeLength: 0.1f, maxSplits: 1);
+CheckStripAdjacency(once);
+CheckFaceSets(once);
+
+var coarsened = TopologySubdivision.Subdivide(topology, minEdgeLength: 0.1f, maxSplits: 1);
+TopologyCoarsening.Coarsen(coarsened, maxIntegralError: 0f, maxCollapses: 1);
+Dump("after 1 coarsen", coarsened);
+
+CheckTopologyFileRoundTrip(once);
+
+static void CheckTopologyFileRoundTrip(Topology topology)
+{
+	var path = Path.Combine(Path.GetTempPath(), "delauny-fabric-topology.txt");
+	TopologyFile.Save(topology, path);
+	var loaded = TopologyFile.Load(path);
+	Console.WriteLine(
+		$"topology file: saved v={topology.Vertices.Count} c={topology.Corners.Count} loaded v={loaded.Vertices.Count} c={loaded.Corners.Count}");
+	File.Delete(path);
+}
+
+static void CheckFaceSets(Topology subdiv)
+{
+	var strip = TopologyWalk.WalkStrip(subdiv.Corners[0]);
+	var faceSets = TopologyCoarsening.BuildCollapseFaceSets(strip);
+	Console.WriteLine(
+		$"face sets: before={faceSets.Before.Count} after={faceSets.After.Count}");
+	for (int i = 0; i < strip.Count; i++)
+	{
+		var c = strip[i];
+		Console.WriteLine(
+			$"  strip{i}: Next.FromSubdiv={c.Next.Vertex.FromSubdivision} Next.Next.FromSubdiv={c.Next.Next.Vertex.FromSubdivision}");
+	}
+
+	int subdivVertices = 0;
+	foreach (var vertex in subdiv.Vertices)
+	{
+		if (vertex.FromSubdivision)
+			subdivVertices++;
+	}
+
+	Console.WriteLine(
+		$"  unsubdivided: vertices={subdiv.Vertices.Count - subdivVertices} subdiv={subdivVertices}");
+	for (int i = 0; i < faceSets.Before.Count; i++)
+		Console.WriteLine($"  before{i}: {FormatFace(faceSets.Before[i])}");
+
+	for (int i = 0; i < faceSets.After.Count; i++)
+		Console.WriteLine($"  after{i}: {FormatFace(faceSets.After[i])}");
+}
+
+static string FormatFace(IReadOnlyList<CoreCorner> face)
+{
+	var uvs = new string[face.Count];
+	for (int i = 0; i < face.Count; i++)
+		uvs[i] = $"({face[i].Uv.X:F2},{face[i].Uv.Y:F2})";
+
+	return $"corners={face.Count} uvs={string.Join(" ", uvs)}";
+}
+
+static void CheckStripAdjacency(Topology subdiv)
+{
+	var strip = TopologyWalk.WalkStrip(subdiv.Corners[0]);
+	Console.WriteLine($"strip count={strip.Count}");
+	for (int i = 0; i + 1 < strip.Count; i++)
+	{
+		var a = strip[i];
+		var b = strip[i + 1];
+		bool eq1 = ReferenceEquals(a.Vertex, b.Prev.Vertex);
+		bool eq2 = ReferenceEquals(a.Next.Vertex, b.Vertex);
+		Console.WriteLine(
+			$"  {i}-{i + 1}: Vertex==Prev.Vertex {eq1}  Next.Vertex==Vertex {eq2}  Across.Vertex==Next.Next.Vertex {ReferenceEquals(b.Across?.Vertex, a.Next.Next.Vertex)}");
+	}
+}
 
 static List<PositionedPatternMarker> BuildInsetSquare()
 {
@@ -61,6 +135,7 @@ static void Dump(string label, Topology topology)
 {
 	Console.WriteLine($"{label}: vertices={topology.Vertices.Count} corners={topology.Corners.Count}");
 	Check(topology);
+	Console.WriteLine($"  selfEdges={SelfEdgeCount(topology)}");
 
 	for (int i = 0; i < topology.Corners.Count; i++)
 	{
@@ -108,6 +183,18 @@ static void Check(Topology topology)
 	}
 
 	Console.WriteLine($"  faces={faces}");
+}
+
+static int SelfEdgeCount(Topology topology)
+{
+	int count = 0;
+	foreach (var corner in topology.Corners)
+	{
+		if (corner.Vertex == corner.Next.Vertex)
+			count++;
+	}
+
+	return count;
 }
 
 static string Uv(CoreCorner c) => $"({c.Uv.X:F2},{c.Uv.Y:F2})";

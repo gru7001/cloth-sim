@@ -23,8 +23,8 @@ public static class TopologySubdivision
 
 		while (pending.Count > 0 && splits < maxSplits)
 		{
-			var origin = TakeAny(pending);
-			var strip = WalkStrip(origin);
+			var origin = TopologyWalk.TakeAny(pending);
+			var strip = TopologyWalk.WalkStrip(origin);
 
 			if (CanSplit(strip, minEdgeLength))
 			{
@@ -117,13 +117,13 @@ public static class TopologySubdivision
 		exitLower = CreateCorner(topology, exitSplitVertex, exitMidUv);
 		var exitUpper = CreateCorner(topology, exitSplitVertex, exitMidUv);
 
-		WireNext(entry, entryLower);
-		WireNext(entryLower, exitLower);
-		WireNext(exitLower, exitNext);
+		TopologyWalk.WireNext(entry, entryLower);
+		TopologyWalk.WireNext(entryLower, exitLower);
+		TopologyWalk.WireNext(exitLower, exitNext);
 
-		WireNext(entryUpper, entryNext);
-		WireNext(exit, exitUpper);
-		WireNext(exitUpper, entryUpper);
+		TopologyWalk.WireNext(entryUpper, entryNext);
+		TopologyWalk.WireNext(exit, exitUpper);
+		TopologyWalk.WireNext(exitUpper, entryUpper);
 
 		entryLower.Across = exitUpper;
 		exitUpper.Across = entryLower;
@@ -150,6 +150,7 @@ public static class TopologySubdivision
 		var vertex = new Vertex
 		{
 			Xyz = (corner.Vertex.Xyz + corner.Next.Vertex.Xyz) * 0.5f,
+			FromSubdivision = true,
 		};
 
 		topology.Vertices.Add(vertex);
@@ -164,12 +165,6 @@ public static class TopologySubdivision
 		return corner;
 	}
 
-	static void WireNext(Corner corner, Corner next)
-	{
-		corner.Next = next;
-		next.Prev = corner;
-	}
-
 	static void ConnectAcross(Corner exit, Corner exitLower, Corner entry, Corner entryUpper)
 	{
 		if (exit.Across != entry || entry.Across != exit)
@@ -179,14 +174,6 @@ public static class TopologySubdivision
 		entryUpper.Across = exit;
 		exitLower.Across = entry;
 		entry.Across = exitLower;
-	}
-
-	static Corner TakeAny(HashSet<Corner> corners)
-	{
-		foreach (var corner in corners)
-			return corner;
-
-		throw new System.InvalidOperationException("Expected at least one pending corner.");
 	}
 
 	static bool CanSplit(IReadOnlyList<Corner> strip, float minEdgeLength)
@@ -201,49 +188,13 @@ public static class TopologySubdivision
 		return true;
 	}
 
-	static List<Corner> WalkStrip(Corner origin)
-	{
-		var (forward, end) = WalkForward(origin);
-		if (end == origin)
-			return forward;
-
-		if (origin.Across == null)
-			return forward;
-
-		var (backward, _) = WalkForward(origin.Across);
-		var strip = new List<Corner>(backward.Count + forward.Count);
-		for (int i = backward.Count - 1; i >= 0; i--)
-			strip.Add(backward[i].Next.Next);
-
-		strip.AddRange(forward);
-		return strip;
-	}
-
-	static (List<Corner> Corners, Corner? End) WalkForward(Corner origin)
-	{
-		var corners = new List<Corner>();
-		Corner? current = origin;
-		bool first = true;
-
-		while (current != null && (first || current != origin))
-		{
-			first = false;
-			corners.Add(current);
-
-			current = current.Next.Next;
-			current = current.Across;
-		}
-
-		return (corners, current);
-	}
-
 	static Dictionary<Vertex, Vertex> CopyVertices(Topology source, Topology result)
 	{
 		var vertexMap = new Dictionary<Vertex, Vertex>(source.Vertices.Count);
 
 		foreach (var vertex in source.Vertices)
 		{
-			var copy = new Vertex { Xyz = vertex.Xyz };
+			var copy = new Vertex { Xyz = vertex.Xyz, FromSubdivision = vertex.FromSubdivision };
 			result.Vertices.Add(copy);
 			vertexMap[vertex] = copy;
 		}

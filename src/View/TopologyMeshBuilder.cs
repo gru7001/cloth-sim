@@ -93,7 +93,7 @@ public static class TopologyMeshBuilder
 
 		float strain = (currentLength - restLength) / restLength;
 		if (strain > 0f)
-			return LerpColor(new Color(0.95f, 0.95f, 0.95f), new Color(1f, 0.15f, 0.05f), Mathf.Min(strain * 4f, 1f));
+			return LerpColor(new Color(0.95f, 0.95f, 0.95f), new Color(1f, 0.15f, 0.05f), Mathf.Min(strain, 1f));
 
 		return LerpColor(new Color(0.95f, 0.95f, 0.95f), new Color(0.1f, 0.35f, 1f), Mathf.Min(-strain * 4f, 1f));
 	}

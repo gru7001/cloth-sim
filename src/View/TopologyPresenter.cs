@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using DelaunyFabric.Core;
@@ -16,14 +17,17 @@ public partial class TopologyPresenter : Node3D
 	[Export] public NodePath SurfacePath { get; set; } = "Surface";
 	[Export] public NodePath GraphPath { get; set; } = "Graph";
 	[Export] public float InitNormalOffset { get; set; } = 0.05f;
-	[Export] public float SubdivisionMinUvEdgeLength { get; set; } = 0.01f;
-	[Export] public float UvScale { get; set; } = 0.5f;
-	[Export] public int RelaxationIterations { get; set; } = 10;
-	[Export] public float SkinDistance { get; set; } = 0.006f;
-	[Export] public float ContactFrictionStrength { get; set; } = 4f;
-	[Export] public float StaticFrictionStrength { get; set; } = 1.0f;
+	[Export] public float SubdivisionMinUvEdgeLength { get; set; } = 0.02f;
+	[Export] public float UvScale { get; set; } = 0.6f;	
+	[Export] public int RelaxationIterations { get; set; } = 200;
+	[Export] public float SkinDistance { get; set; } = 0.015f;
+	[Export] public float ContactFrictionStrength { get; set; } = 2.0f;
+	[Export] public float StaticFrictionStrength { get; set; } = 0.0f;
 	[Export] public float DebugMarkerRadius { get; set; } = 0.0006f;
-	[Export] public Vector3 Gravity { get; set; } = new Vector3(0, -0.001f, 0);
+	[Export] public Vector3 Gravity { get; set; } = new Vector3(0, -0.005f, 0);
+	[Export] public float GravityDecay { get; set; } = 0.99f;
+	[Export] public int TopologySaveInterval { get; set; } = 10;
+	[Export] public string TopologySavePath { get; set; } = "user://topology.topo";
 
 	Topology? _topology;
 	Topology? _workerTopology;
@@ -34,6 +38,7 @@ public partial class TopologyPresenter : Node3D
 	Task? _solverTask;
 	readonly object _positionsLock = new();
 	SolverSnapshot? _latestSnapshot;
+	int _snapshotPrintCounter;
 
 	public override void _Ready()
 	{
@@ -43,11 +48,11 @@ public partial class TopologyPresenter : Node3D
 		var sourceMesh = FindFirstMesh(body)
 			?? throw new InvalidOperationException($"No MeshInstance3D with a Mesh found under {BodyPath}.");
 
-		var patternMarkers = PatternMarkerParser.Parse(LoadImageGrid(PatternPath));
+		var patternMarkers = PatternMarkerParser.Parse(ImageGridLoader.FromResource(PatternPath));
 		var initMarkers = MeshInitMarkerParser.Parse(
 			sourceMesh.Mesh,
 			sourceMesh.GlobalTransform,
-			LoadImageGrid(InitPath),
+			ImageGridLoader.FromResource(InitPath),
 			InitNormalOffset);
 
 		var positioned = PatternMarkerPlacement.Place(patternMarkers, initMarkers);
@@ -87,38 +92,49 @@ public partial class TopologyPresenter : Node3D
 
 	void RunSolver(Topology topology, MeshTriangleCollider collider, CancellationToken token)
 	{
+		var currentGravity = Gravity;
+		int iteration = 0;
+
 		while (!token.IsCancellationRequested)
 		{
-			var wishes = TopologyRelaxation.Relax(
-				topology,
-				UvScale,
-				RelaxationIterations);
-
-			AddGravity(wishes);
-			DampenWishes(topology, wishes);
-			TopologyCollision.Apply(
+			TopologyRelaxation.Relax(
 				topology,
 				collider,
-				wishes,
 				SkinDistance,
 				ContactFrictionStrength,
-				StaticFrictionStrength);
-			PublishSnapshot(topology);
+				StaticFrictionStrength,
+				currentGravity,
+				UvScale,
+				RelaxationIterations);
+			PublishSnapshot(topology, currentGravity);
+			currentGravity *= Mathf.Clamp(GravityDecay, 0f, 1f);
+			iteration++;
+
+			if (TopologySaveInterval > 0 && iteration % TopologySaveInterval == 0)
+				SaveTopology(topology);
+
 			Thread.Sleep(1);
 		}
 	}
 
-	static void DampenWishes(Topology topology, List<Vector3> wishes)
+	void SaveTopology(Topology topology)
 	{
-		for (int i = 0; i < wishes.Count; i++)
+		try
 		{
-			var current = topology.Vertices[i].Xyz;
-			var diff = wishes[i] - current;
-			wishes[i] = current + diff * 0.1f;
+			var absolutePath = ProjectSettings.GlobalizePath(TopologySavePath);
+			var directory = Path.GetDirectoryName(absolutePath);
+			if (!string.IsNullOrEmpty(directory))
+				Directory.CreateDirectory(directory);
+
+			TopologyFile.Save(topology, absolutePath);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"Failed to save topology: {ex.Message}");
 		}
 	}
 
-	void PublishSnapshot(Topology topology)
+	void PublishSnapshot(Topology topology, Vector3 currentGravity)
 	{
 		var positions = new Vector3[topology.Vertices.Count];
 		var contactNormals = new Vector3?[topology.Vertices.Count];
@@ -129,7 +145,7 @@ public partial class TopologyPresenter : Node3D
 		}
 
 		lock (_positionsLock)
-			_latestSnapshot = new SolverSnapshot(positions, contactNormals);
+			_latestSnapshot = new SolverSnapshot(positions, contactNormals, currentGravity);
 	}
 
 	bool ApplyLatestPositions()
@@ -153,6 +169,8 @@ public partial class TopologyPresenter : Node3D
 			_topology.Vertices[i].ContactNormal = value.ContactNormals[i];
 		}
 
+		GD.Print($"Current gravity slice: {value.CurrentGravity}");
+
 		return true;
 	}
 
@@ -162,18 +180,6 @@ public partial class TopologyPresenter : Node3D
 
 		_surface.Mesh = TopologyMeshBuilder.Build(_topology);
 		_graph.Mesh = TopologyMeshBuilder.BuildDebugMarkers(_topology, DebugMarkerRadius, UvScale);
-	}
-
-	static ImageGrid LoadImageGrid(string path)
-	{
-		var image = Image.LoadFromFile(path);
-		if (image == null)
-			throw new InvalidOperationException($"Could not load image: {path}");
-
-		if (image.GetFormat() != Image.Format.Rgba8)
-			image.Convert(Image.Format.Rgba8);
-
-		return new ImageGrid(image.GetData(), image.GetWidth(), image.GetHeight());
 	}
 
 	static MeshInstance3D? FindFirstMesh(Node node)
@@ -190,15 +196,6 @@ public partial class TopologyPresenter : Node3D
 		return null;
 	}
 
-	void AddGravity(List<Vector3> wishes)
-	{
-		if (Gravity == Vector3.Zero) return;
-
-		var offset = Gravity;
-		for (int i = 0; i < wishes.Count; i++)
-			wishes[i] += offset;
-	}
-
 	static Topology CloneTopology(Topology source)
 	{
 		var clone = new Topology();
@@ -211,6 +208,7 @@ public partial class TopologyPresenter : Node3D
 			{
 				Xyz = vertex.Xyz,
 				ContactNormal = vertex.ContactNormal,
+				FromSubdivision = vertex.FromSubdivision,
 			};
 			clone.Vertices.Add(copy);
 			vertexMap[vertex] = copy;
@@ -240,5 +238,5 @@ public partial class TopologyPresenter : Node3D
 		return clone;
 	}
 
-	readonly record struct SolverSnapshot(Vector3[] Positions, Vector3?[] ContactNormals);
+	readonly record struct SolverSnapshot(Vector3[] Positions, Vector3?[] ContactNormals, Vector3 CurrentGravity);
 }
