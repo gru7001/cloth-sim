@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Godot;
 
 namespace DelaunyFabric.Core;
 
@@ -18,7 +19,6 @@ public static class TopologySubdivision
 	static void SubdivideInPlace(Topology topology, float minEdgeLength, int maxSplits)
 	{
 		var pending = new HashSet<Corner>(topology.Corners);
-		var splitVertices = new Dictionary<EdgeKey, Vertex>();
 		int splits = 0;
 
 		while (pending.Count > 0 && splits < maxSplits)
@@ -28,10 +28,8 @@ public static class TopologySubdivision
 
 			if (CanSplit(strip, minEdgeLength))
 			{
-				var newCorners = SplitStrip(topology, splitVertices, strip);
+				var newCorners = SplitStrip(topology, strip);	
 				splits++;
-				foreach (var corner in strip)
-					pending.Remove(corner);
 				foreach (var corner in newCorners)
 					pending.Add(corner);
 			}
@@ -43,113 +41,120 @@ public static class TopologySubdivision
 		}
 	}
 
-	static List<Corner> SplitStrip(
-		Topology topology,
-		Dictionary<EdgeKey, Vertex> splitVertices,
-		IReadOnlyList<Corner> strip)
+	static List<Corner> SplitStrip(Topology topology, IReadOnlyList<Corner> strip)
 	{
 		var created = new List<Corner>();
-		if (strip.Count == 0) return created;
+		if (strip.Count == 0)
+			return created;
 
-		var origin = strip[0];
-		Corner? firstEntryUpper = null;
-		Corner? previousExit = null;
-		Corner? previousExitLower = null;
+		bool closed = IsClosedStrip(strip);
+		Corner? prevAboveRight = null;
+		Corner? prevBelowRight = null;
+		Corner? firstAboveLeft = null;
+		Corner? firstBelowLeft = null;
+		Vertex? prevRightVertex = null;
+		Vertex? firstLeftVertex = null;
 
-		foreach (var entry in strip)
+		for (int i = 0; i < strip.Count; i++)
 		{
-			var exit = entry.Next.Next;
-			var entrySplitVertex = GetOrCreateSplitVertex(topology, splitVertices, entry);
-			var exitSplitVertex = GetOrCreateSplitVertex(topology, splitVertices, exit);
+			var topRight = strip[i];
+			var bottomRight = topRight.Next;
+			var bottomLeft = bottomRight.Next;
+			var topLeft = bottomLeft.Next;
 
-			SplitSegment(
-				topology,
-				entry,
-				exit,
-				entrySplitVertex,
-				exitSplitVertex,
-				out var entryUpper,
-				out var exitLower,
-				out var newCorners);
+			Vertex leftVertex = prevRightVertex ?? CreateSplitVertexOnEdge(topology, bottomLeft);
+			Vertex rightVertex = closed && i == strip.Count - 1
+				? firstLeftVertex!
+				: CreateSplitVertexOnEdge(topology, topRight);
 
-			created.AddRange(newCorners);
-			firstEntryUpper ??= entryUpper;
+			var rightMidUv = MidUv(topRight, bottomRight);
+			var aboveRight = CreateCorner(topology, rightVertex, rightMidUv);
+			var belowRight = CreateCorner(topology, rightVertex, rightMidUv);
 
-			if (previousExit != null && previousExitLower != null)
-				ConnectAcross(previousExit, previousExitLower, entry, entryUpper);
+			var leftMidUv = MidUv(topLeft, bottomLeft);
+			var aboveLeft = CreateCorner(topology, leftVertex, leftMidUv);
+			var belowLeft = CreateCorner(topology, leftVertex, leftMidUv);
 
-			previousExit = exit;
-			previousExitLower = exitLower;
-		}
+			TopologyWalk.WireNext(topRight, aboveRight);
+			TopologyWalk.WireNext(aboveRight, aboveLeft);
+			TopologyWalk.WireNext(aboveLeft, topLeft);
 
-		if (previousExit != null && previousExitLower != null)
-		{
-			if (previousExit.Across == origin)
+			TopologyWalk.WireNext(bottomLeft, belowLeft);
+			TopologyWalk.WireNext(belowLeft, belowRight);
+			TopologyWalk.WireNext(belowRight, bottomRight);
+
+			WireNewCornerAcross(
+				aboveRight,
+				belowRight,
+				aboveLeft,
+				belowLeft,
+				prevAboveRight,
+				prevBelowRight);
+
+			if (i == 0)
 			{
-				ConnectAcross(previousExit, previousExitLower, origin, firstEntryUpper);
+				firstAboveLeft = aboveLeft;
+				firstBelowLeft = belowLeft;
+				firstLeftVertex = leftVertex;
 			}
-			else if (previousExit.Across == null)
+
+			if (closed && i == strip.Count - 1)
 			{
-				previousExitLower.Across = null;
+				firstAboveLeft!.Across = aboveRight;
+				belowRight.Across = firstBelowLeft!;
 			}
+
+			prevAboveRight = aboveRight;
+			prevBelowRight = belowRight;
+			prevRightVertex = rightVertex;
+
+			created.AddRange([aboveRight, belowRight, aboveLeft, belowLeft]);
 		}
 
 		return created;
 	}
 
-	static void SplitSegment(
-		Topology topology,
-		Corner entry,
-		Corner exit,
-		Vertex entrySplitVertex,
-		Vertex exitSplitVertex,
-		out Corner entryUpper,
-		out Corner exitLower,
-		out List<Corner> created)
+	static bool IsClosedStrip(IReadOnlyList<Corner> strip)
 	{
-		var entryNext = entry.Next;
-		var exitNext = exit.Next;
-		var entryMidUv = (entry.Uv + entryNext.Uv) * 0.5f;
-		var exitMidUv = (exit.Uv + exitNext.Uv) * 0.5f;
+		if (strip.Count < 2)
+			return false;
 
-		var entryLower = CreateCorner(topology, entrySplitVertex, entryMidUv);
-		entryUpper = CreateCorner(topology, entrySplitVertex, entryMidUv);
-		exitLower = CreateCorner(topology, exitSplitVertex, exitMidUv);
-		var exitUpper = CreateCorner(topology, exitSplitVertex, exitMidUv);
-
-		TopologyWalk.WireNext(entry, entryLower);
-		TopologyWalk.WireNext(entryLower, exitLower);
-		TopologyWalk.WireNext(exitLower, exitNext);
-
-		TopologyWalk.WireNext(entryUpper, entryNext);
-		TopologyWalk.WireNext(exit, exitUpper);
-		TopologyWalk.WireNext(exitUpper, entryUpper);
-
-		entryLower.Across = exitUpper;
-		exitUpper.Across = entryLower;
-
-		created = [entryLower, entryUpper, exitLower, exitUpper];
+		var (_, end) = TopologyWalk.WalkForward(strip[0]);
+		return end == strip[0];
 	}
 
-	static Vertex GetOrCreateSplitVertex(
-		Topology topology,
-		Dictionary<EdgeKey, Vertex> splitVertices,
-		Corner corner)
+	/// <summary>
+	/// Directed Across on split corners only (one pointer per corner).
+	/// Within cell: above-right → below-right, below-left → above-left.
+	/// Along strip: above-left → previous-above-right, previous-below-right → below-left.
+	/// Closed wrap: first above-left → last above-right, last below-right → first below-left.
+	/// </summary>
+	static void WireNewCornerAcross(
+		Corner aboveRight,
+		Corner belowRight,
+		Corner aboveLeft,
+		Corner belowLeft,
+		Corner? prevAboveRight,
+		Corner? prevBelowRight)
 	{
-		var key = new EdgeKey(corner.Vertex, corner.Next.Vertex);
-		if (splitVertices.TryGetValue(key, out var vertex))
-			return vertex;
+		aboveRight.Across = belowRight;
+		belowLeft.Across = aboveLeft;
 
-		vertex = CreateSplitVertex(topology, corner);
-		splitVertices[key] = vertex;
-		return vertex;
+		if (prevAboveRight != null)
+			aboveLeft.Across = prevAboveRight;
+
+		if (prevBelowRight != null)
+			prevBelowRight.Across = belowLeft;
 	}
 
-	static Vertex CreateSplitVertex(Topology topology, Corner corner)
+	static Vector2 MidUv(Corner a, Corner b) => (a.Uv + b.Uv) * 0.5f;
+
+	static Vertex CreateSplitVertexOnEdge(Topology topology, Corner edgeStart)
 	{
+		var edgeEnd = edgeStart.Next;
 		var vertex = new Vertex
 		{
-			Xyz = (corner.Vertex.Xyz + corner.Next.Vertex.Xyz) * 0.5f,
+			Xyz = (edgeStart.Vertex.Xyz + edgeEnd.Vertex.Xyz) * 0.5f,
 			FromSubdivision = true,
 		};
 
@@ -157,7 +162,7 @@ public static class TopologySubdivision
 		return vertex;
 	}
 
-	static Corner CreateCorner(Topology topology, Vertex vertex, Godot.Vector2 uv)
+	static Corner CreateCorner(Topology topology, Vertex vertex, Vector2 uv)
 	{
 		var corner = new Corner { Uv = uv, Vertex = vertex };
 		topology.Corners.Add(corner);
@@ -165,19 +170,11 @@ public static class TopologySubdivision
 		return corner;
 	}
 
-	static void ConnectAcross(Corner exit, Corner exitLower, Corner entry, Corner entryUpper)
-	{
-		if (exit.Across != entry || entry.Across != exit)
-			throw new System.InvalidOperationException("Can only split-connect corners that were already across.");
-
-		exit.Across = entryUpper;
-		entryUpper.Across = exit;
-		exitLower.Across = entry;
-		entry.Across = exitLower;
-	}
-
 	static bool CanSplit(IReadOnlyList<Corner> strip, float minEdgeLength)
 	{
+		if (strip.Count == 0)
+			return false;
+
 		float requiredLength = minEdgeLength * 2f;
 		foreach (var corner in strip)
 		{
@@ -239,20 +236,4 @@ public static class TopologySubdivision
 		}
 	}
 
-	readonly struct EdgeKey(Vertex a, Vertex b) : System.IEquatable<EdgeKey>
-	{
-		readonly Vertex _a = a;
-		readonly Vertex _b = b;
-
-		public bool Equals(EdgeKey other) =>
-			(ReferenceEquals(_a, other._a) && ReferenceEquals(_b, other._b))
-			|| (ReferenceEquals(_a, other._b) && ReferenceEquals(_b, other._a));
-
-		public override bool Equals(object? obj) =>
-			obj is EdgeKey other && Equals(other);
-
-		public override int GetHashCode() =>
-			System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(_a)
-			^ System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(_b);
-	}
 }

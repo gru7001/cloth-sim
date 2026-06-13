@@ -9,19 +9,17 @@ using Vector3 = Godot.Vector3;
 var markers = BuildInsetSquare();
 var topology = TopologyBuilder.Build(markers);
 
-Dump("before", topology);
-
-Dump("after 1 split", TopologySubdivision.Subdivide(topology, minEdgeLength: 0.1f, maxSplits: 1));
-Dump("after 2 splits", TopologySubdivision.Subdivide(topology, minEdgeLength: 0.1f, maxSplits: 2));
-Dump("after 3 splits", TopologySubdivision.Subdivide(topology, minEdgeLength: 0.1f, maxSplits: 3));
+var onceSplit = TopologySubdivision.Subdivide(topology, minEdgeLength: 0.1f, maxSplits: 1);
+Console.WriteLine($"before: v={topology.Vertices.Count} c={topology.Corners.Count}");
+Console.WriteLine($"after 1 split: v={onceSplit.Vertices.Count} c={onceSplit.Corners.Count}");
 
 var once = TopologySubdivision.Subdivide(topology, minEdgeLength: 0.1f, maxSplits: 1);
 CheckStripAdjacency(once);
 CheckFaceSets(once);
 
 var coarsened = TopologySubdivision.Subdivide(topology, minEdgeLength: 0.1f, maxSplits: 1);
-TopologyCoarsening.Coarsen(coarsened, maxIntegralError: 0f, maxCollapses: 1);
-Dump("after 1 coarsen", coarsened);
+TopologyCoarsening.Coarsen(coarsened, maxIntegralError: 1e-6f, maxCollapses: 1);
+Console.WriteLine($"after 1 coarsen: v={coarsened.Vertices.Count} c={coarsened.Corners.Count}");
 
 CheckTopologyFileRoundTrip(once);
 
@@ -83,8 +81,9 @@ static void CheckStripAdjacency(Topology subdiv)
 		var b = strip[i + 1];
 		bool eq1 = ReferenceEquals(a.Vertex, b.Prev.Vertex);
 		bool eq2 = ReferenceEquals(a.Next.Vertex, b.Vertex);
+		var step = TopologyWalk.StripStepForward(a);
 		Console.WriteLine(
-			$"  {i}-{i + 1}: Vertex==Prev.Vertex {eq1}  Next.Vertex==Vertex {eq2}  Across.Vertex==Next.Next.Vertex {ReferenceEquals(b.Across?.Vertex, a.Next.Next.Vertex)}");
+			$"  {i}-{i + 1}: Vertex==Prev.Vertex {eq1}  Next.Vertex==Vertex {eq2}  b==Across.Next {ReferenceEquals(b, step)}");
 	}
 }
 
@@ -129,79 +128,4 @@ static void Link(PositionedPatternMarker a, PositionedPatternMarker b)
 {
 	a.Connected.Add(b);
 	b.Connected.Add(a);
-}
-
-static void Dump(string label, Topology topology)
-{
-	Console.WriteLine($"{label}: vertices={topology.Vertices.Count} corners={topology.Corners.Count}");
-	Check(topology);
-	Console.WriteLine($"  selfEdges={SelfEdgeCount(topology)}");
-
-	for (int i = 0; i < topology.Corners.Count; i++)
-	{
-		var c = topology.Corners[i];
-		Console.WriteLine(
-			$"  c{i}: uv={Uv(c)} next={IndexOf(topology, c.Next)} prev={IndexOf(topology, c.Prev)} across={IndexOf(topology, c.Across)} edgeLen={(c.Uv - c.Next.Uv).Length():F3}");
-	}
-}
-
-static void Check(Topology topology)
-{
-	var used = new HashSet<CoreCorner>();
-	int faces = 0;
-	foreach (var corner in topology.Corners)
-	{
-		if (corner.Across != null && corner.Across.Across != corner)
-			Console.WriteLine($"  broken across at c{topology.Corners.IndexOf(corner)}");
-
-		if (!used.Add(corner)) continue;
-
-		int length = 0;
-		var current = corner;
-		do
-		{
-			length++;
-			current = current.Next;
-			if (length > 16)
-			{
-				Console.WriteLine($"  oversized face from c{topology.Corners.IndexOf(corner)}");
-				break;
-			}
-		}
-		while (current != corner);
-
-		current = corner;
-		for (int i = 0; i < length; i++)
-		{
-			used.Add(current);
-			current = current.Next;
-		}
-
-		faces++;
-		if (length != 4)
-			Console.WriteLine($"  non-quad face from c{topology.Corners.IndexOf(corner)} length={length}");
-	}
-
-	Console.WriteLine($"  faces={faces}");
-}
-
-static int SelfEdgeCount(Topology topology)
-{
-	int count = 0;
-	foreach (var corner in topology.Corners)
-	{
-		if (corner.Vertex == corner.Next.Vertex)
-			count++;
-	}
-
-	return count;
-}
-
-static string Uv(CoreCorner c) => $"({c.Uv.X:F2},{c.Uv.Y:F2})";
-
-static string IndexOf(Topology topology, CoreCorner? corner)
-{
-	if (corner == null) return "null";
-	int i = topology.Corners.IndexOf(corner);
-	return i >= 0 ? i.ToString() : "?";
 }

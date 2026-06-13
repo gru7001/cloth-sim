@@ -1,4 +1,7 @@
 using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Text;
 using DelaunyFabric.Core;
 using Godot;
 using TopologyCorner = DelaunyFabric.Core.Corner;
@@ -7,6 +10,62 @@ namespace DelaunyFabric.View;
 
 public static class TopologyMeshBuilder
 {
+	public static void SaveObj(Topology topology, string path) =>
+		SaveObj(Build(topology), path);
+
+	public static void SaveObj(ArrayMesh mesh, string path)
+	{
+		var directory = Path.GetDirectoryName(path);
+		if (!string.IsNullOrEmpty(directory))
+			Directory.CreateDirectory(directory);
+
+		var sb = new StringBuilder();
+		sb.AppendLine("# DelaunyFabric topology export");
+
+		var arrays = mesh.SurfaceGetArrays(0);
+		var vertices = (Vector3[])arrays[(int)Mesh.ArrayType.Vertex];
+		var uvs = (Vector2[])arrays[(int)Mesh.ArrayType.TexUV];
+		var indices = (int[])arrays[(int)Mesh.ArrayType.Index];
+
+		for (int i = 0; i < vertices.Length; i++)
+		{
+			var v = vertices[i];
+			sb.Append("v ")
+				.Append(v.X.ToString(CultureInfo.InvariantCulture))
+				.Append(' ')
+				.Append(v.Y.ToString(CultureInfo.InvariantCulture))
+				.Append(' ')
+				.Append(v.Z.ToString(CultureInfo.InvariantCulture))
+				.AppendLine();
+		}
+
+		for (int i = 0; i < uvs.Length; i++)
+		{
+			var uv = uvs[i];
+			sb.Append("vt ")
+				.Append(uv.X.ToString(CultureInfo.InvariantCulture))
+				.Append(' ')
+				.Append(uv.Y.ToString(CultureInfo.InvariantCulture))
+				.AppendLine();
+		}
+
+		for (int i = 0; i < indices.Length; i += 3)
+		{
+			int a = indices[i] + 1;
+			int b = indices[i + 2] + 1;
+			int c = indices[i + 1] + 1;
+			sb.Append("f ")
+				.Append(a).Append('/').Append(a)
+				.Append(' ')
+				.Append(b).Append('/').Append(b)
+				.Append(' ')
+				.Append(c).Append('/').Append(c)
+				.AppendLine();
+		}
+
+		File.WriteAllText(path, sb.ToString());
+	}
+
 	public static ArrayMesh Build(Topology topology)
 	{
 		var vertices = new List<Vector3>();

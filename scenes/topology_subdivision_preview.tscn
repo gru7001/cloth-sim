@@ -6,19 +6,20 @@
 
 [sub_resource type="StandardMaterial3D" id="mat_surface"]
 transparency = 1
-cull_mode = 2
+cull_mode = 0
 albedo_color = Color(0.75, 0.78, 0.82, 0.42)
 roughness = 0.85
 
 [sub_resource type="StandardMaterial3D" id="mat_graph"]
-cull_mode = 2
+cull_mode = 0
 shading_mode = 0
 vertex_color_use_as_albedo = true
 
 [node name="TopologySubdivisionPreview" type="Node3D" unique_id=228676923]
 script = ExtResource("1")
-SubdivisionMinUvEdgeLength = 0.1
-SubdivisionSteps = 3
+SubdivisionMinUvEdgeLength = 0.049
+SubdivisionSteps = 1000000
+VertexPerturbRadius = 0.0
 
 [node name="Camera3D" type="Camera3D" parent="." unique_id=764709955]
 transform = Transform3D(1, 0, 0, 0, 0.906308, 0.422618, 0, -0.422618, 0.906308, 0, 3.2, 7)

@@ -41,7 +41,7 @@ public static class PatternMarkerParser
 					x,
 					y,
 					color,
-					new PatternMarker { Uv = BlockToUv(pattern, x, y) }));
+					new PatternMarker { Uv = ImageUv.BlockCenterToUv(x, y, pattern.Width, pattern.Height) }));
 			}
 		}
 
@@ -97,9 +97,6 @@ public static class PatternMarkerParser
 		if (!markers.Contains(marker))
 			markers.Add(marker);
 	}
-
-	static Vector2 BlockToUv(ImageGrid grid, int blockX, int blockY) =>
-		new((blockX + 0.5f) / grid.Width, (blockY + 0.5f) / grid.Height);
 
 	readonly record struct ParsedMarker(int BlockX, int BlockY, MarkerColor Color, PatternMarker Marker);
 }

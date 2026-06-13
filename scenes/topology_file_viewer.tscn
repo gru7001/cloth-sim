@@ -1,51 +1,53 @@
 [gd_scene format=3 uid="uid://dbuqt4l1te4sj"]
 
-[ext_resource type="Script" uid="uid://d8m3k1topologyfile" path="res://src/View/TopologyFileViewer.cs" id="1"]
+[ext_resource type="Script" uid="uid://0xmd3q2utp5s" path="res://src/View/TopologyFileViewer.cs" id="1"]
 [ext_resource type="Script" uid="uid://vhqw87qfpqrd" path="res://src/View/OrbitCamera.cs" id="2"]
+[ext_resource type="PackedScene" uid="uid://dr20wx8ysvu7s" path="res://assets/fembody.glb" id="3_fembody"]
 
 [sub_resource type="StandardMaterial3D" id="mat_surface"]
-cull_mode = 2
 albedo_color = Color(0.75, 0.78, 0.82, 1)
 roughness = 0.85
 
 [sub_resource type="StandardMaterial3D" id="mat_graph"]
-cull_mode = 2
 shading_mode = 0
 vertex_color_use_as_albedo = true
 
-[node name="TopologyFileViewer" type="Node3D"]
+[node name="TopologyFileViewer" type="Node3D" unique_id=1656876566]
 script = ExtResource("1")
 
-[node name="Camera3D" type="Camera3D" parent="."]
+[node name="Camera3D" type="Camera3D" parent="." unique_id=1371143574]
 transform = Transform3D(1, 0, 0, 0, 0.866025, 0.5, 0, -0.5, 0.866025, 0, 3.5, 5)
 current = true
 script = ExtResource("2")
 
-[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1482352038]
 transform = Transform3D(0.995884, 0.0640869, -0.0640869, 0, 0.707107, 0.707107, 0.0906326, -0.704196, 0.704196, 2, 4, 2)
 shadow_enabled = true
 
-[node name="Original" type="Node3D" parent="."]
+[node name="Body" type="Node3D" parent="." unique_id=894114438]
+
+[node name="FemBody" parent="Body" unique_id=2088177468 instance=ExtResource("3_fembody")]
+
+[node name="Original" type="Node3D" parent="." unique_id=1420778688]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.7, 0, 0)
 
-[node name="Surface" type="MeshInstance3D" parent="Original"]
+[node name="Surface" type="MeshInstance3D" parent="Original" unique_id=628578750]
 material_override = SubResource("mat_surface")
 
-[node name="Graph" type="MeshInstance3D" parent="Original"]
+[node name="Graph" type="MeshInstance3D" parent="Original" unique_id=958636652]
 material_override = SubResource("mat_graph")
 
-[node name="Coarse" type="Node3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.7, 0, 0)
+[node name="Coarse" type="Node3D" parent="." unique_id=1469932450]
 
-[node name="Surface" type="MeshInstance3D" parent="Coarse"]
+[node name="Surface" type="MeshInstance3D" parent="Coarse" unique_id=760569468]
 material_override = SubResource("mat_surface")
 
-[node name="Graph" type="MeshInstance3D" parent="Coarse"]
+[node name="Graph" type="MeshInstance3D" parent="Coarse" unique_id=1747501281]
 material_override = SubResource("mat_graph")
 
-[node name="CanvasLayer" type="CanvasLayer" parent="."]
+[node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=1457589001]
 
-[node name="Hint" type="Label" parent="CanvasLayer"]
+[node name="Hint" type="Label" parent="CanvasLayer" unique_id=2129003479]
 offset_left = 12.0
 offset_top = 12.0
 theme_override_font_sizes/font_size = 14

@@ -4,6 +4,10 @@ namespace DelaunyFabric.Core;
 
 public static class TopologyWalk
 {
+	/// <summary>
+	/// Walks a quad face via <see cref="Corner.Next"/>.
+	/// Corner order is reversed relative to face index / bilinear parametric order.
+	/// </summary>
 	public static List<Corner> WalkFace(Corner origin)
 	{
 		var face = new List<Corner>();
@@ -22,19 +26,38 @@ public static class TopologyWalk
 		return face;
 	}
 
+	/// <summary>
+	/// Walks a quad face via <see cref="Corner.Prev"/>.
+	/// Corner order matches face index and bilinear corners at (0,0), (1,0), (1,1), (0,1).
+	/// </summary>
+	public static List<Corner> WalkFaceCcw(Corner origin)
+	{
+		var face = new List<Corner>();
+		var current = origin;
+
+		do
+		{
+			face.Add(current);
+			current = current.Prev;
+
+			if (face.Count > 16)
+				throw new System.InvalidOperationException("Expected a quad face.");
+		}
+		while (current != origin);
+
+		return face;
+	}
+
 	public static List<Corner> WalkStrip(Corner origin)
 	{
-		var (forward, end) = WalkForward(origin);
-		if (end == origin)
+		var (forward, forwardEnd) = WalkForward(origin);
+		if (forwardEnd == origin)
 			return forward;
 
-		if (origin.Across == null)
-			return forward;
-
-		var (backward, _) = WalkForward(origin.Across);
+		var (backward, _) = WalkBackward(origin);
 		var strip = new List<Corner>(backward.Count + forward.Count);
-		for (int i = backward.Count - 1; i >= 0; i--)
-			strip.Add(backward[i].Next.Next);
+		for (int i = backward.Count - 1; i >= 1; i--)
+			strip.Add(backward[i]);
 
 		strip.AddRange(forward);
 		return strip;
@@ -51,12 +74,33 @@ public static class TopologyWalk
 			first = false;
 			corners.Add(current);
 
-			current = current.Next.Next;
-			current = current.Across;
+			current = StripStepForward(current);
 		}
 
 		return (corners, current);
 	}
+
+	public static (List<Corner> Corners, Corner? End) WalkBackward(Corner origin)
+	{
+		var corners = new List<Corner>();
+		Corner? current = origin;
+		bool first = true;
+
+		while (current != null && (first || current != origin))
+		{
+			first = false;
+			corners.Add(current);
+
+			current = StripStepBackward(current);
+		}
+
+		return (corners, current);
+	}
+
+	public static Corner? StripStepForward(Corner corner) => corner.Across?.Next;
+
+	public static Corner? StripStepBackward(Corner corner) =>
+		corner.Next.Next.Across?.Prev;
 
 	public static Corner TakeAny(HashSet<Corner> corners)
 	{

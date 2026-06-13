@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using Godot;
 
 namespace DelaunyFabric.Core;
 
@@ -12,30 +14,56 @@ public static class TopologyCoarsening
 {
 	public static Topology Coarsen(Topology source, float maxIntegralError, int maxCollapses = int.MaxValue)
 	{
-		var pending = new HashSet<Corner>(source.Corners);
-		int collapses = 0;
-
-		while (pending.Count > 0 && collapses < maxCollapses)
+		for (int i = 0; i < maxCollapses; i++)
 		{
-			var origin = TopologyWalk.TakeAny(pending);
-			var strip = TopologyWalk.WalkStrip(origin);
-			var faceSets = BuildCollapseFaceSets(strip);
-
-			if (CanCollapse(strip, faceSets, maxIntegralError))
+			var pending = new HashSet<Corner>(source.Corners);
+			var bestStrip = null as IReadOnlyList<Corner>;
+			var bestFaceSets = null as CollapseFaceSets;
+			var smallestArea = float.MaxValue;
+			
+			while (pending.Count > 0)
 			{
-				CollapseStrip(source, strip, faceSets);
-				collapses++;
+				var strip = TopologyWalk.WalkStrip(TopologyWalk.TakeAny(pending));
+				foreach (var corner in strip)
+					pending.Remove(corner);
+
+				if (!IsStripFromSubdivision(strip))
+				{
+					continue;
+				}
+
+				var faceSets = BuildCollapseFaceSets(strip);
+				var error = CalculateIntegralError(faceSets);
+				var area = CalculateFacesArea(faceSets.After);
+				if (error <= maxIntegralError && area < smallestArea)
+				{
+					smallestArea = area;
+					bestStrip = strip;
+					bestFaceSets = faceSets;
+				}
 			}
 
-			foreach (var corner in strip)
-				pending.Remove(corner);
+			if (bestStrip == null)
+			{
+				return source;
+			}
+			CollapseStrip(source, bestStrip, bestFaceSets);
 		}
-
 		return source;
 	}
 
-	public static CollapseFaceSets BuildStripCollapseFaceSets(Corner origin) =>
-		BuildCollapseFaceSets(TopologyWalk.WalkStrip(origin));
+	static float CalculateFacesArea(IReadOnlyList<IReadOnlyList<Corner>> faces)
+	{
+		var area = 0f;
+		foreach (var face in faces) {
+			area += CalculateTriangleArea([face[0].Vertex.Xyz, face[1].Vertex.Xyz, face[2].Vertex.Xyz]);
+			area += CalculateTriangleArea([face[0].Vertex.Xyz, face[2].Vertex.Xyz, face[3].Vertex.Xyz]);
+		}
+		return area;
+	}
+
+	public static float ComputeIntegralError(IReadOnlyList<Corner> strip, CollapseFaceSets faceSets) =>
+		CalculateIntegralError(faceSets);
 
 	public static CollapseFaceSets BuildCollapseFaceSets(IReadOnlyList<Corner> strip)
 	{
@@ -45,6 +73,38 @@ public static class TopologyCoarsening
 			AddStripEntryFaces(faceSets, corner);
 
 		return faceSets;
+	}
+
+	static void CollapseStrip(
+		Topology topology,
+		IReadOnlyList<Corner> strip,
+		CollapseFaceSets faceSets)
+	{
+		RewireAfterFaces(strip, faceSets);
+		RemoveEdgeLoop(topology, strip);
+	}
+
+	static void RemoveEdgeLoop(Topology topology, IReadOnlyList<Corner> strip)
+	{
+		var vertices = new HashSet<Vertex>();
+		foreach (var corner in strip)
+		{
+			vertices.Add(corner.Vertex);
+			vertices.Add(corner.Prev.Vertex);
+		}
+
+		var cornersToRemove = new HashSet<Corner>();
+		foreach (var vertex in vertices)
+		{
+			foreach (var corner in vertex.Corners)
+				cornersToRemove.Add(corner);
+		}
+
+		foreach (var corner in cornersToRemove)
+			topology.Corners.Remove(corner);
+
+		foreach (var vertex in vertices)
+			topology.Vertices.Remove(vertex);
 	}
 
 	static void AddStripEntryFaces(CollapseFaceSets faceSets, Corner corner)
@@ -60,32 +120,9 @@ public static class TopologyCoarsening
 		[
 			corner.Next,
 			corner.Next.Next,
+			across.Next,
 			across.Next.Next,
-			across.Prev,
 		]);
-	}
-
-	static bool CanCollapse(
-		IReadOnlyList<Corner> strip,
-		CollapseFaceSets faceSets,
-		float maxIntegralError)
-	{
-		if (strip.Count == 0 || faceSets.Before.Count == 0 || faceSets.After.Count == 0)
-			return false;
-
-		foreach (var corner in strip)
-		{
-			if (!corner.Next.Vertex.FromSubdivision || !corner.Next.Next.Vertex.FromSubdivision)
-				return false;
-		}
-
-		return true;
-	}
-
-	static void CollapseStrip(Topology topology, IReadOnlyList<Corner> strip, CollapseFaceSets faceSets)
-	{
-		RewireAfterFaces(strip, faceSets);
-		RemoveEdgeLoopVertices(topology, strip);
 	}
 
 	static void RewireAfterFaces(IReadOnlyList<Corner> strip, CollapseFaceSets faceSets)
@@ -102,25 +139,76 @@ public static class TopologyCoarsening
 		}
 	}
 
-	static void RemoveEdgeLoopVertices(Topology topology, IReadOnlyList<Corner> strip)
+
+	static bool IsStripFromSubdivision(IReadOnlyList<Corner> strip)
 	{
-		var vertices = new HashSet<Vertex>();
 		foreach (var corner in strip)
 		{
-			vertices.Add(corner.Vertex);
+			if (!corner.Vertex.FromSubdivision || !corner.Prev.Vertex.FromSubdivision)
+				return false;
 		}
 
-		var cornersToRemove = new HashSet<Corner>();
-		foreach (var vertex in vertices)
+		return true;
+	}
+
+	static float CalculateIntegralError(CollapseFaceSets faceSets)
+	{
+		var totalError = 0f;
+		for (int i = 0; i < faceSets.After.Count; i++)
 		{
-			foreach (var corner in vertex.Corners)
-				cornersToRemove.Add(corner);
+			var before = faceSets.Before[i * 2];
+			var after = faceSets.After[i];
+			var volume = CalculateVolume(before, after);
+			var area0 = CalculateTriangleArea([after[0].Vertex.Xyz, after[1].Vertex.Xyz, after[2].Vertex.Xyz]);
+			var area1 = CalculateTriangleArea([after[0].Vertex.Xyz, after[1].Vertex.Xyz, after[3].Vertex.Xyz]);
+			var area = area0 + area1;
+			var error = volume / area;
+			totalError += error;
 		}
+		return totalError;
+	}
 
-		foreach (var corner in cornersToRemove)
-			topology.Corners.Remove(corner);
+	static float CalculateVolume(IReadOnlyList<Corner> before, IReadOnlyList<Corner> after)
+	{	
+		(Vector3, Vector3)[] rails = [
+				(after[0].Vertex.Xyz, after[1].Vertex.Xyz),
+				(before[0].Vertex.Xyz, before[3].Vertex.Xyz),
+				(after[2].Vertex.Xyz, after[3].Vertex.Xyz),
+		];
+		float length = 0.0f;
+		for (int i = 0; i < rails.Length; i++)
+		{
+			var (a, b) = rails[i];
+			length += (b - a).Length();
+		}
+		length /= rails.Length;
+		float totalVolume = 0.0f;
+		float step = 0.1f;
+		for (float alpha = 0.0f; alpha < 1.0f; alpha += step)
+		{
+			var lerpedTriangle = new Vector3[rails.Length];
+			for (int i = 0; i < rails.Length; i++)
+			{
+				var (a, b) = rails[i];
+				var c = Lerp(a, b, alpha);
+				lerpedTriangle[i] = c;
+			}
+			float area = CalculateTriangleArea(lerpedTriangle);
+			totalVolume += area * length * step;
+		}
+		return totalVolume;
+	}
 
-		foreach (var vertex in vertices)
-			topology.Vertices.Remove(vertex);
+	static Vector3 Lerp(Vector3 a, Vector3 b, float t) =>
+		a + (b - a) * t;
+
+	static float CalculateTriangleArea(IReadOnlyList<Vector3> triangle)
+	{
+		if (triangle.Count < 3)
+			return 0f;
+
+		var ab = triangle[1] - triangle[0];
+		var ac = triangle[2] - triangle[0];
+		return ab.Cross(ac).Length() * 0.5f;
 	}
 }

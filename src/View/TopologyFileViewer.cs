@@ -8,19 +8,42 @@ namespace DelaunyFabric.View;
 public partial class TopologyFileViewer : Node3D
 {
 	[Export] public string TopologyPath { get; set; } = "user://topology.topo";
+	[Export] public NodePath BodyPath { get; set; } = "Body";
 	[Export] public NodePath OriginalSurfacePath { get; set; } = "Original/Surface";
 	[Export] public NodePath OriginalGraphPath { get; set; } = "Original/Graph";
 	[Export] public NodePath CoarseSurfacePath { get; set; } = "Coarse/Surface";
 	[Export] public NodePath CoarseGraphPath { get; set; } = "Coarse/Graph";
-	[Export] public float MaxIntegralError { get; set; } = float.MaxValue;
+	[Export] public float MaxIntegralError { get; set; } = 0.08f;
 	[Export] public float UvScale { get; set; } = 0.7f;
 	[Export] public float DebugMarkerRadius { get; set; } = 0.0006f;
+	[Export] public string NormalMapPath { get; set; } = "user://topology_normal.png";
+	[Export] public int NormalMapSize { get; set; } = 1;
+	[Export] public string CoarseMeshPath { get; set; } = "user://topology_coarse.obj";
+	[Export] public string CurvatureMapPath { get; set; } = "user://topology_curvature.png";
+	[Export] public float CurvatureScale { get; set; } = 0f;
 
 	public override void _Ready()
 	{
 		var absolutePath = ProjectSettings.GlobalizePath(TopologyPath);
 		var topology = TopologyFile.Load(absolutePath);
+
+		var body = GetNode<Node3D>(BodyPath);
+		var collider = GodotMeshCollider.BuildFrom(body);
+
 		var coarse = TopologyCoarsening.Coarsen(CloneTopology(topology), MaxIntegralError);
+		TopologyFaceSdfResolve.Resolve(coarse, collider, 20, 0.002f);
+
+		var normalMapPath = ProjectSettings.GlobalizePath(NormalMapPath);
+		TopologyNormalBake.BakeAndSave(coarse, topology, NormalMapSize, NormalMapSize, normalMapPath);
+		GD.Print($"Saved normal map to {normalMapPath}");
+
+		var coarseMeshPath = ProjectSettings.GlobalizePath(CoarseMeshPath);
+		TopologyMeshBuilder.SaveObj(coarse, coarseMeshPath);
+		GD.Print($"Saved coarse mesh to {coarseMeshPath}");
+
+		var curvatureMapPath = ProjectSettings.GlobalizePath(CurvatureMapPath);
+		TopologyCurvatureBake.BakeAndSave(coarse, NormalMapSize, NormalMapSize, curvatureMapPath, CurvatureScale);
+		GD.Print($"Saved curvature map to {curvatureMapPath}");
 
 		SetMeshes(OriginalSurfacePath, OriginalGraphPath, topology);
 		SetMeshes(CoarseSurfacePath, CoarseGraphPath, coarse);

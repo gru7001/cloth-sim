@@ -28,7 +28,7 @@ public static class MeshInitMarkerParser
 				initImage.RegisterMarkerBlock(x, y, markers.Count);
 
 				if (!anchors.TryGetValue(color, out var xyz)) continue;
-				markers.Add(new InitMarker(BlockToUv(initImage, x, y), xyz));
+				markers.Add(new InitMarker(ImageUv.BlockCenterToUv(x, y, initImage.Width, initImage.Height), xyz));
 			}
 		}
 
@@ -109,6 +109,4 @@ public static class MeshInitMarkerParser
 			(byte)Mathf.Clamp(Mathf.RoundToInt(c.G * 255f), 0, 255),
 			(byte)Mathf.Clamp(Mathf.RoundToInt(c.B * 255f), 0, 255));
 
-	static Vector2 BlockToUv(ImageGrid grid, int blockX, int blockY) =>
-		new((blockX + 0.5f) / grid.Width, (blockY + 0.5f) / grid.Height);
 }

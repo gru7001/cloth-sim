@@ -17,11 +17,11 @@ public partial class TopologyPresenter : Node3D
 	[Export] public NodePath SurfacePath { get; set; } = "Surface";
 	[Export] public NodePath GraphPath { get; set; } = "Graph";
 	[Export] public float InitNormalOffset { get; set; } = 0.05f;
-	[Export] public float SubdivisionMinUvEdgeLength { get; set; } = 0.02f;
-	[Export] public float UvScale { get; set; } = 0.6f;	
+	[Export] public float SubdivisionMinUvEdgeLength { get; set; } = 0.01f;
+	[Export] public float UvScale { get; set; } = 0.5f;	
 	[Export] public int RelaxationIterations { get; set; } = 200;
 	[Export] public float SkinDistance { get; set; } = 0.015f;
-	[Export] public float ContactFrictionStrength { get; set; } = 2.0f;
+	[Export] public float ContactFrictionStrength { get; set; } = 5.0f;
 	[Export] public float StaticFrictionStrength { get; set; } = 0.0f;
 	[Export] public float DebugMarkerRadius { get; set; } = 0.0006f;
 	[Export] public Vector3 Gravity { get; set; } = new Vector3(0, -0.005f, 0);

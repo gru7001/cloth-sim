@@ -42,7 +42,7 @@ public static class TopologyRelaxation
 					weights[vi] += weight;
 				}
 
-				if (corner.Across is Corner across)
+				if (corner.Across?.Prev is Corner across)
 				{
 					Vertex u = across.Next.Next.Vertex;
 					Vertex v = corner.Vertex;

@@ -35,7 +35,6 @@ public static class TopologyBuilder
 
 		var markerToVertex = BuildVertices(markers, topology);
 		var faces = FindQuadFaces(markers);
-		var cornerAtEdge = new Dictionary<EdgeKey, Corner>();
 
 		foreach (var face in faces)
 		{
@@ -56,29 +55,34 @@ public static class TopologyBuilder
 
 			for (int i = 0; i < 4; i++)
 			{
-				corners[i].Next = corners[(i + 1) % 4];
-				corners[i].Prev = corners[(i + 3) % 4];
-			}
-
-			for (int i = 0; i < 4; i++)
-			{
-				int a = face[i];
-				int b = face[(i + 1) % 4];
-				var forward = new EdgeKey(a, b);
-				var reverse = new EdgeKey(b, a);
-
-				if (cornerAtEdge.TryGetValue(reverse, out var across))
-				{
-					corners[i].Across = across;
-					across.Across = corners[i];
-					continue;
-				}
-
-				cornerAtEdge[forward] = corners[i];
+				corners[i].Next = corners[(i + 3) % 4];
+				corners[i].Prev = corners[(i + 1) % 4];
 			}
 		}
 
+		RebuildVertexRings(topology);
 		return topology;
+	}
+
+	public static void RebuildVertexRings(Topology topology)
+	{
+		foreach (var corner in topology.Corners)
+			RebuildAcross(corner);
+	}
+
+	static void RebuildAcross(Corner corner)
+	{
+		var head = corner.Next.Vertex;
+		foreach (var candidate in corner.Vertex.Corners)
+		{
+			if (candidate.Prev.Vertex != head)
+				continue;
+
+			corner.Across = candidate;
+			return;
+		}
+
+		corner.Across = null;
 	}
 
 	static Dictionary<PositionedPatternMarker, Vertex> BuildVertices(
@@ -237,5 +241,4 @@ public static class TopologyBuilder
 		return area * 0.5f;
 	}
 
-	readonly record struct EdgeKey(int From, int To);
 }
